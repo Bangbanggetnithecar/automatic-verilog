@@ -115,10 +115,16 @@
    - 电邮名`Email Name`，配置参数为`g:atv_snippet_email`。假设不需要此选项请配置为`''`，如不配置则自动采用默认配置。配置方法同上。
    - 网站名`Website Name`，配置参数为`g:atv_snippet_website`。假设不需要此选项请配置为`''`，如不配置则自动采用默认配置。配置方法同上。
    - 生成时间`Created On`，根据当前时间自动生成，必生成项。
-   - 修改时间`Last Modified`，根据每一次更改自动更新，必生成项，且在修改文件时自动更新
+   - 修改时间`Last Modified`，默认自动生成并在修改文件时自动更新；如需关闭，可配置`let g:atv_snippet_last_modified = 0`
    - 文件名`File Name`，根据当前文件名自动生成。必生成项。
    - 公司名`Company Name`，配置参数为`g:atv_snippet_company`。假设不需要此选项请配置为`''`，如不配置则自动采用默认配置。此项会生成公司版权声明。配置方法同上。
    - 修改历史`History`，自动生成初版的历史声明。
+
+   例如，如果希望关闭`Last Modified`的生成和自动更新时间，可在`.vimrc(or _vimrc)`中添加：
+
+   ```javascript
+   let g:atv_snippet_last_modified = 0
+   ```
 
    </details>
 
@@ -1286,4 +1292,3 @@ let g:atv_rtl_recursive = 1
 ```
 
 另外，更新`RtlTree`时，总会自动进行递归调用。
-
