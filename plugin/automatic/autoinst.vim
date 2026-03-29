@@ -212,6 +212,7 @@ endif
 function! g:AutoInst(mode)
     "Get module-file-dir dictionary
     let [files,modules] = g:AutoVerilog_GetModuleFileDirDic()
+    let module_cache = {}
 
     "Record current position
     let orig_idx = line('.')
@@ -250,25 +251,39 @@ function! g:AutoInst(mode)
         if has_key(modules,module_name)
             let file = modules[module_name]
             let dir = files[file]
-            "read file
-            let lines = readfile(dir.'/'.file)
-            "reserve only module lines, in case of multiple module in same file
-            let lines = g:AutoVerilog_RsvModuleLine(lines,module_name)
+            let cache_key = dir.'/'.file."\n".module_name
+            if has_key(module_cache,cache_key)
+                let cache_value = module_cache[cache_key]
+                let lines = copy(cache_value['lines'])
+                let io_seqs = copy(cache_value['io_seqs'])
+                let io_names = copy(cache_value['io_names'])
+            else
+                "read file
+                let lines = readfile(dir.'/'.file)
+                "reserve only module lines, in case of multiple module in same file
+                let lines = g:AutoVerilog_RsvModuleLine(lines,module_name)
+
+                "io sequences
+                let io_seqs = g:AutoVerilog_GetIO(lines,'seq')
+                let io_names = g:AutoVerilog_GetIO(lines,'name')
+                let module_cache[cache_key] = {
+                            \ 'lines' : copy(lines),
+                            \ 'io_seqs' : copy(io_seqs),
+                            \ 'io_names' : copy(io_names),
+                            \ }
+            endif
 
             "get add_dir by g:atv_crossdir_dirs e.g. F:/vim/test.v ->$VIM/test.v
+            let add_dir = dir
             if g:atv_autoinst_add_dir_keep == 1
                 for exp_dir in keys(g:atv_crossdir_dirs)
-                    if dir =~ escape(exp_dir,'\/')
-                        let dir = substitute(dir,escape(exp_dir,'\/'),g:atv_crossdir_dirs[exp_dir],'')
+                    if add_dir =~ escape(exp_dir,'\/')
+                        let add_dir = substitute(add_dir,escape(exp_dir,'\/'),g:atv_crossdir_dirs[exp_dir],'')
                         break
                     endif
                 endfor
             endif
-            let add_dir = dir.'/'.file
-
-            "io sequences
-            let io_seqs = g:AutoVerilog_GetIO(lines,'seq')
-            let io_names = g:AutoVerilog_GetIO(lines,'name')
+            let add_dir = add_dir.'/'.file
         else
             echohl ErrorMsg | echo "No file with module name ".module_name." exist in cur dir ".getcwd() | echohl None
             if a:mode == 1

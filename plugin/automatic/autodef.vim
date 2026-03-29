@@ -1366,6 +1366,7 @@ endfunction
 "---------------------------------------------------
 function s:GetiWire(lines,files,modules,reg_width_names,decl_reg,io_names)
     let width_names = {}
+    let inst_io_cache = {}
 
     "Get current module io
     let module_io_names = copy(a:io_names)
@@ -1413,7 +1414,13 @@ function s:GetiWire(lines,files,modules,reg_width_names,decl_reg,io_names)
                 if has_key(a:modules,module_name)
                     let file = a:modules[module_name]
                     let dir = a:files[file]
-                    let inst_io_names = g:AutoVerilog_GetIO(readfile(dir.'/'.file),'name')
+                    let cache_key = dir.'/'.file
+                    if has_key(inst_io_cache,cache_key)
+                        let inst_io_names = copy(inst_io_cache[cache_key])
+                    else
+                        let inst_io_names = g:AutoVerilog_GetIO(readfile(cache_key),'name')
+                        let inst_io_cache[cache_key] = copy(inst_io_names)
+                    endif
                 else
                     echohl ErrorMsg | echo "file: ".module_name.".v does not exist in cur dir ".getcwd() | echohl None
                     let inst_io_names = {}

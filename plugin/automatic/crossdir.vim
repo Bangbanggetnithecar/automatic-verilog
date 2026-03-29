@@ -15,12 +15,17 @@ let g:loaded_automatic_verilog_crossdir = 1
 
 "}}}1
 
+"Cache 缓存{{{1
+let s:module_file_dir_cache = {}
+"}}}1
+
 "{{{1 debug注释行
 let s:skip_cmt_debug = 0
 "}}}1
 
 "Record update 记录脚本更新
 autocmd BufWrite crossdir.vim call s:UpdateVimscriptLastModifyTime()
+autocmd BufWritePost *.v,*.sv,*.f,tags call s:ClearModuleFileDirCache()
 function s:UpdateVimscriptLastModifyTime()
     let line = getline(5)
     if line =~ '\" Last Modified'
@@ -32,6 +37,7 @@ endfunction
 "Defaults 默认设置{{{1
 let g:_ATV_CROSSDIR_DEFAULTS = {
             \'mode':            0,
+            \'backend':         'auto',
             \'flist_browse':    1,
             \'flist_file':      '',
             \'tags_browse':     1,
@@ -43,6 +49,8 @@ for s:key in keys(g:_ATV_CROSSDIR_DEFAULTS)
         let g:atv_crossdir_{s:key} = copy(g:_ATV_CROSSDIR_DEFAULTS[s:key])
     endif
 endfor
+
+command! AutoVerilogRefreshCache call g:AutoVerilog_ClearCache()
 "}}}1
             
 "{{{1 AutoVerilog_GetModuleFileDirDic 主函数 获取模块名-文件名-文件夹位置关系
@@ -64,6 +72,13 @@ endfor
 "   [files,modules]
 "---------------------------------------------------
 function g:AutoVerilog_GetModuleFileDirDic()
+    let cache_key = s:GetModuleFileDirCacheKey()
+    if has_key(s:module_file_dir_cache,cache_key)
+        let cache_value = s:module_file_dir_cache[cache_key]
+        let g:atv_crossdir_dirs = copy(cache_value['crossdir_dirs'])
+        return [copy(cache_value['files']),copy(cache_value['modules'])]
+    endif
+
     "normal
     if g:atv_crossdir_mode == 0
         "Get directory list by scaning line
@@ -88,11 +103,115 @@ function g:AutoVerilog_GetModuleFileDirDic()
         echohl ErrorMsg | echo "Error mode input for GetModuleFileDirDic"| echohl None
     endif
 
+    let s:module_file_dir_cache[cache_key] = {
+                \ 'files' : copy(files),
+                \ 'modules' : copy(modules),
+                \ 'crossdir_dirs' : copy(g:atv_crossdir_dirs),
+                \ }
     return [files,modules]
 endfunction
 "}}}1
 
 "{{{1 AutoVerilog_GetModuleFileDirDic Subfunction 子函数
+
+function! g:AutoVerilog_ClearCache()
+    call s:ClearModuleFileDirCache()
+endfunction
+
+function s:ClearModuleFileDirCache()
+    let s:module_file_dir_cache = {}
+endfunction
+
+function s:GetModuleFileDirCacheKey()
+    let key = [getcwd(),string(g:atv_crossdir_mode),g:atv_crossdir_backend]
+    let lines = getline(1,line('$'))
+    let lib_lines = filter(copy(lines),'v:val =~ ''verilog-library-''')
+    call add(key,join(lib_lines,"\n"))
+    call add(key,g:atv_crossdir_flist_file)
+    call add(key,g:atv_crossdir_tags_file)
+    call add(key,string(g:atv_crossdir_flist_browse))
+    call add(key,string(g:atv_crossdir_tags_browse))
+    if exists('s:flist_browse_file')
+        call add(key,s:flist_browse_file)
+    else
+        call add(key,'')
+    endif
+    if exists('s:tags_browse_file')
+        call add(key,s:tags_browse_file)
+    else
+        call add(key,'')
+    endif
+    return join(key,"\n")
+endfunction
+
+function s:GetCrossdirBackend()
+    if g:atv_crossdir_backend == 'auto' || g:atv_crossdir_backend == 'fd'
+        if executable('fd')
+            return 'fd'
+        elseif executable('fdfind')
+            return 'fdfind'
+        elseif g:atv_crossdir_backend == 'fd'
+            echohl WarningMsg | echo 'fd backend requested but fd/fdfind is unavailable, fallback to vim scan'| echohl None
+        endif
+    elseif g:atv_crossdir_backend != 'vim'
+        echohl WarningMsg | echo 'Unknown g:atv_crossdir_backend = '.g:atv_crossdir_backend.', fallback to auto'| echohl None
+        if executable('fd')
+            return 'fd'
+        elseif executable('fdfind')
+            return 'fdfind'
+        endif
+    endif
+    return 'vim'
+endfunction
+
+function s:GetFileExtensions(elist)
+    let ext_list = ['v','sv']
+    for ext in a:elist
+        let clean_ext = substitute(ext,'^\.','','')
+        if clean_ext != '' && index(ext_list,clean_ext) == -1
+            call add(ext_list,clean_ext)
+        endif
+    endfor
+    return ext_list
+endfunction
+
+function s:GetFileDirDicFromLibFd(dir,rec,files,elist)
+    let backend = s:GetCrossdirBackend()
+    if backend == 'vim'
+        return 0
+    endif
+
+    let ext_list = s:GetFileExtensions(a:elist)
+    let cmd = backend.' --type f --absolute-path --no-ignore'
+    if a:rec == 0
+        let cmd = cmd.' --max-depth 1'
+    endif
+    for ext in ext_list
+        let cmd = cmd.' -e '.shellescape(ext)
+    endfor
+    let cmd = cmd.' '.shellescape('.').' '.shellescape(a:dir)
+    let output = system(cmd)
+    if v:shell_error != 0
+        if g:atv_crossdir_backend == 'fd'
+            echohl WarningMsg | echo 'fd scan failed, fallback to vim scan: '.a:dir| echohl None
+        endif
+        return 0
+    endif
+
+    let pathlist = split(output,"\n")
+    call filter(pathlist,'v:val != ""')
+    call sort(pathlist)
+
+    for path in pathlist
+        let vfile = fnamemodify(path,':p')
+        let file = fnamemodify(vfile,':t')
+        let filedir = fnamemodify(vfile,':p:h')
+        if !has_key(a:files,file)
+            call extend(a:files,{file : filedir})
+        endif
+    endfor
+    return 1
+endfunction
 
 "GetModuleFileDirDicFromTags 从Tags获取文件名-文件夹-模块名关系{{{2
 "--------------------------------------------------
@@ -320,7 +439,9 @@ function s:GetFileDirDicFromLib(dirlist,rec,vlist,elist)
     endfor
     "find file from dirlist(recursively)
     for dir in a:dirlist
-        let files = s:GetFileDirDicFromLibRec(dir,a:rec,files,a:elist)
+        if s:GetFileDirDicFromLibFd(dir,a:rec,files,a:elist) == 0
+            let files = s:GetFileDirDicFromLibRec(dir,a:rec,files,a:elist)
+        endif
     endfor
     return files
 endfunction
@@ -929,4 +1050,3 @@ endif
 "}}}2
 
 "}}}1
-

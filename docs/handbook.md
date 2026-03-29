@@ -952,6 +952,29 @@ let g:atv_autopara_tail_nalign = 1
 let g:atv_crossdir_mode = 2    "0:normal 1:filelist 2:tags
 ```
 
+从性能角度推荐：
+
+- 大工程优先使用`tags`
+- 其次使用`filelist`
+- `verilog-library`更适合轻量工程或临时使用
+
+在`verilog-library`模式下，还可以配置搜索后端：
+
+```javascript
+let g:atv_crossdir_backend = 'auto'    "'auto': 优先 fd/fdfind，没有则回退 Vim 内建扫描
+```
+
+跨文件夹搜索结果会在当前 Vim 会话内缓存。以下情况会自动刷新缓存：
+
+- 保存`.v`、`.sv`、`.f`或`tags`文件
+- 当前 buffer 里的`verilog-library-*`配置发生变化
+
+也可以手动刷新：
+
+```vim
+:AutoVerilogRefreshCache
+```
+
 1. `verilog-library`设置（默认）
 
    <details>
@@ -984,7 +1007,7 @@ let g:atv_crossdir_mode = 2    "0:normal 1:filelist 2:tags
      >
      > 如果不配置跨文件夹的选项，默认会以打开`vim`的位置作为搜索顶层往下**递归**搜索相关`.v`或`.sv`文件。
   >
-     > 注意不要在`桌面`或者`盘符根目录`等位置打开文件并使用脚本，否则搜索可能会卡死。（暂时不考虑修复为自动切换地址到文件位置，因为与`RtlTree`部分功能冲突）
+     > 注意不要在`桌面`或者`盘符根目录`等位置打开文件并使用脚本，否则搜索可能会非常慢。即使开启缓存和`fd`后端，也更推荐改用`tags`或`filelist`。
 
      ![CrossDir](https://cdn-1301954091.cos.ap-chengdu.myqcloud.com/blog/vimscript-automatic/cross_dir.gif)
 
