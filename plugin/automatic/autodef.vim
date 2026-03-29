@@ -1451,6 +1451,7 @@ function s:GetiWire(lines,files,modules,reg_width_names,decl_reg,io_names)
                     endwhile
                     let conn_name = matchstr(conn,'\w\+')                           "connection name
                     let conn_width = matchstr(conn,'\[.*\]')                        "connection width
+                    let conn_suffix = ''
 
                     "record inst line here
                     let inst_line = line
@@ -1504,8 +1505,24 @@ function s:GetiWire(lines,files,modules,reg_width_names,decl_reg,io_names)
                         else
                             let stype = 'iwire'
                         endif
+
+                        if len(value) > 10
+                            let port_width = value[10]
+                        elseif value[3] == 'c0' || value[4] == 'c0'
+                            let port_width = ''
+                        else
+                            let port_width = '['.value[3].':'.value[4].']'
+                        endif
+                        if len(value) > 11
+                            let port_suffix = value[11]
+                        else
+                            let port_suffix = ''
+                        endif
+                        let conn_suffix = port_suffix
                     else
                         let wire_status = -1
+                        let port_width = ''
+                        let port_suffix = ''
                         echohl ErrorMsg | echo "Error when get ".port." from ".module_name| echohl None
                     endif
 
@@ -1526,12 +1543,7 @@ function s:GetiWire(lines,files,modules,reg_width_names,decl_reg,io_names)
                             let conn_width = conn_width
                         else
                             "if connection width not exist, use port_width
-                            if conn_width == '' 
-                                if value[3] == 'c0' || value[4] == 'c0'
-                                    let port_width = ''
-                                else
-                                    let port_width = '['.value[3].':'.value[4].']'
-                                endif
+                            if conn_width == ''
                                 let conn_width = port_width
                             "if conneciton width exist, use connection width
                             else
@@ -1547,11 +1559,13 @@ function s:GetiWire(lines,files,modules,reg_width_names,decl_reg,io_names)
                             let inst_lines = add(old_value[2],inst_line)
                             let module_names = add(old_value[3],module_name)
                             let conn_widths = add(old_value[4],conn_width)
+                            let conn_suffixes = add(old_value[7],conn_suffix)
                         else
                             let seqs = [seq]
                             let inst_lines = [inst_line]
                             let module_names = [module_name]
                             let conn_widths = [conn_width]
+                            let conn_suffixes = [conn_suffix]
                         endif
 
                         "resolved
@@ -1562,9 +1576,9 @@ function s:GetiWire(lines,files,modules,reg_width_names,decl_reg,io_names)
                         endif
 
                                 "   width_names
-                                "    0     1            2           3             4            5         6
-                                "   [seqs, signal_name, lines,      module_names, conn_widths, resolved, type]
-                        let value = [seqs, conn_name,   inst_lines, module_names, conn_widths, resolved, stype]
+                                "    0     1            2           3             4            5         6      7
+                                "   [seqs, signal_name, lines,      module_names, conn_widths, resolved, type, conn_suffixes]
+                        let value = [seqs, conn_name,   inst_lines, module_names, conn_widths, resolved, stype, conn_suffixes]
                         
                         call extend(width_names,{conn_name : value})
                         "echo 'name = '.conn_name.join(conn_widths)
@@ -1887,8 +1901,13 @@ function s:DrawWire(wire_names,wire_list)
         if type == 'wire'
             let name = value[3]
             let width = value[2]
+            if len(value) > 6
+                let suffix = value[6]
+            else
+                let suffix = ''
+            endif
             "calculate maximum len of position to Draw
-            "let line = prefix.'wire'.' '.width.width2name.name.name2semicol.semicol
+            "let line = prefix.'wire'.' '.width.width2name.name.suffix.name2semicol.semicol
             if stype == 'iwire' || stype == 'awire'
                 let stype = 'wire'
             else
@@ -1899,7 +1918,7 @@ function s:DrawWire(wire_names,wire_list)
             else 
                 let max_lname_len = max([max_lname_len,len(prefix)+len(stype)+len(' ')+len(width)+4,g:atv_autodef_name_pos])
             endif
-            let max_rsemicol_len = max([max_rsemicol_len,max_lname_len+len(name)+4,g:atv_autodef_sym_pos])
+            let max_rsemicol_len = max([max_rsemicol_len,max_lname_len+len(name)+len(suffix)+4,g:atv_autodef_sym_pos])
         endif
     endfor
     "}}}3
@@ -1956,13 +1975,14 @@ function s:DrawWire(wire_names,wire_list)
 
         "name
         let name = value[3]
+        let suffix = ''
 
         "name2semicol
         "don't align tail if config
         if g:atv_autodef_tail_nalign == 1
             let name2semicol = ''
         else
-            let name2semicol = repeat(' ',max_rsemicol_len-max_lname_len-len(name))
+            let name2semicol = repeat(' ',max_rsemicol_len-max_lname_len-len(name)-len(suffix))
         endif
 
         "semicol
@@ -1972,16 +1992,16 @@ function s:DrawWire(wire_names,wire_list)
         "empty list, default
         if wire_list_empty == 1
             if g:atv_autodef_logic == 1
-                let line = prefix.'logic'.' '.width.width2name.name.name2semicol.semicol
+                let line = prefix.'logic'.' '.width.width2name.name.suffix.name2semicol.semicol
             else
-                let line = prefix.'wire'.' '.width.width2name.name.name2semicol.semicol
+                let line = prefix.'wire'.' '.width.width2name.name.suffix.name2semicol.semicol
             endif
         "update list,draw wire by config
         else
             if g:atv_autodef_logic == 1
-                let line = prefix.'logic'.' '.width.width2name.name.name2semicol.semicol
+                let line = prefix.'logic'.' '.width.width2name.name.suffix.name2semicol.semicol
             else
-                let line = prefix.'wire'.' '.width.width2name.name.name2semicol.semicol
+                let line = prefix.'wire'.' '.width.width2name.name.suffix.name2semicol.semicol
             endif
             "process //WIRE_NEW
             let wire_idx = index(wire_list,name) 
@@ -2038,13 +2058,18 @@ function s:DrawWire(wire_names,wire_list)
 
         "name
         let name = value[3]
+        if len(value) > 6
+            let suffix = value[6]
+        else
+            let suffix = ''
+        endif
 
         "name2semicol
         "don't align tail if config
         if g:atv_autodef_tail_nalign == 1
             let name2semicol = ''
         else
-            let name2semicol = repeat(' ',max_rsemicol_len-max_lname_len-len(name))
+            let name2semicol = repeat(' ',max_rsemicol_len-max_lname_len-len(name)-len(suffix))
         endif
 
         "semicol
@@ -2054,16 +2079,16 @@ function s:DrawWire(wire_names,wire_list)
         "empty list, default
         if wire_list_empty == 1
             if g:atv_autodef_logic == 1
-                let line = prefix.'logic'.' '.width.width2name.name.name2semicol.semicol
+                let line = prefix.'logic'.' '.width.width2name.name.suffix.name2semicol.semicol
             else
-                let line = prefix.stype.' '.width.width2name.name.name2semicol.semicol
+                let line = prefix.stype.' '.width.width2name.name.suffix.name2semicol.semicol
             endif
         "update list,draw wire by config
         else
             if g:atv_autodef_logic == 1
-                let line = prefix.'logic'.' '.width.width2name.name.name2semicol.semicol
+                let line = prefix.'logic'.' '.width.width2name.name.suffix.name2semicol.semicol
             else
-                let line = prefix.stype.' '.width.width2name.name.name2semicol.semicol
+                let line = prefix.stype.' '.width.width2name.name.suffix.name2semicol.semicol
             endif
             "process //WIRE_NEW
             let wire_idx = index(wire_list,name) 
@@ -2830,6 +2855,56 @@ endfunction
 
 "}}}2
 
+function s:MergeConnWidths(conn_widths)
+    let widths = []
+    for width in a:conn_widths
+        let width = substitute(width,'\s*','','g')
+        if width != ''
+            call add(widths,width)
+        endif
+    endfor
+
+    if widths == []
+        return ''
+    endif
+
+    let numeric_widths = []
+    let all_numeric = 1
+    for width in widths
+        if width =~ '^\[\d\+\]$'
+            call add(numeric_widths,str2nr(matchstr(width,'\d\+')))
+        elseif width =~ '^\[\d\+:\d\+\]$'
+            call add(numeric_widths,str2nr(matchstr(width,'^\[\zs\d\+\ze:')))
+            call add(numeric_widths,str2nr(matchstr(width,':\zs\d\+\ze\]')))
+        else
+            let all_numeric = 0
+            break
+        endif
+    endfor
+
+    if all_numeric == 1
+        let width1 = max(numeric_widths)
+        let width2 = min(numeric_widths)
+        if width1 == width2
+            return '['.width1.']'
+        endif
+        return '['.width1.':'.width2.']'
+    endif
+
+    let uniq_widths = []
+    for width in widths
+        if index(uniq_widths,width) == -1
+            call add(uniq_widths,width)
+        endif
+    endfor
+    if len(uniq_widths) == 1
+        return uniq_widths[0]
+    endif
+
+    return widths[-1]
+endfunction
+"}}}2
+
 "Universal-GetSig
 "GetAllSig 获取所有信号{{{2
 "--------------------------------------------------
@@ -3134,22 +3209,26 @@ function s:GetAllSig(lines,mode)
             "use iwire
             else
                 let conn_widths = iwire_value[4]
+                let conn_width = s:MergeConnWidths(conn_widths)
                 let stype = iwire_value[6]
+                let conn_suffixes = iwire_value[7]
                 "   list of signal sequences
-                "    0     1             2      3            4         5
-                "   [type, specify type, width, signal_name, resolved, seq]
-                let value = ['wire',stype,conn_widths[-1],name,0,iwire_seqs[0]]
+                "    0     1             2      3            4         5    6
+                "   [type, specify type, width, signal_name, resolved, seq, suffix]
+                let value = ['wire',stype,conn_width,name,0,iwire_seqs[0],conn_suffixes[-1]]
                 call extend(sig_names,{name : value})
                 call extend(wire_names,{name : value})
             endif
         "only iwire
         else
             let conn_widths = iwire_value[4]
+            let conn_width = s:MergeConnWidths(conn_widths)
             let stype = iwire_value[6]
+            let conn_suffixes = iwire_value[7]
             "   list of signal sequences
-            "    0     1             2      3            4         5
-            "   [type, specify type, width, signal_name, resolved, seq]
-            let value = ['wire',stype,conn_widths[-1],name,iwire_resolved,iwire_seqs[0]]
+            "    0     1             2      3            4         5            6
+            "   [type, specify type, width, signal_name, resolved, seq,        suffix]
+            let value = ['wire',stype,conn_width,name,iwire_resolved,iwire_seqs[0],conn_suffixes[-1]]
             call extend(sig_names,{name : value})
             call extend(wire_names,{name : value})
         endif
@@ -3335,4 +3414,3 @@ endfun
 let &cpo=s:cpo
 unlet s:cpo
 "}}}1
-

@@ -535,63 +535,59 @@ function g:AutoVerilog_GetIO(lines,mode)
                 "io direction input/output/inout
                 let io_dir = matchstr(line,s:VlogTypePorts)
 
-                "width
-                let width = matchstr(line,'\[.\{-\}\]')                 
-                let width = substitute(width,'\s*','','g')          "delete redundant space
-                let width1 = matchstr(width,'\v\[\zs\S+\ze:.*\]')   
-                let width2 = matchstr(width,'\v\[.*:\zs\S+\ze\]')   
+                "packed width
+                let decl = substitute(line,io_dir,'','')
+                let decl = substitute(decl,'\<reg\>\|\<wire\>\|\<real\>\|\<logic\>','','g')
+                let decl = substitute(decl,'^\s*','','')
+                let decl_width = matchstr(decl,'^\(\[[^][]*\]\s*\)\+')
+                let decl_width = substitute(decl_width,'\s*','','g')
 
-                if width == ''
-                    let width1 = 'c0'
-                    let width2 = 'c0'
+                let width1 = 'c0'
+                let width2 = 'c0'
+                if decl_width == ''
+                    let width = ''
                 else
-                    "[`DEFINT_PARA]
+                    let width_block = matchstr(decl_width,'^\[[^][]*\]')
+                    let width1 = matchstr(width_block,'\v\[\zs\S+\ze:.*\]')
+                    let width2 = matchstr(width_block,'\v\[.*:\zs\S+\ze\]')
+
                     if width1 == '' && width2 == ''
-                        let width1 = matchstr(width,'\[\zs.*\ze\]')
+                        let width1 = matchstr(width_block,'\[\zs.*\ze\]')
                         let width2 = 'c0'
-                    "[5]
                     elseif width1 == ''
                         let width1 = 'c0'
                     elseif width2 == ''
                         let width2 = 'c0'
                     endif
+                    let width = decl_width
+                endif
+
+                if decl_width == ''
+                    let width1 = 'c0'
+                    let width2 = 'c0'
                 endif
 
                 "name
-                let line = substitute(line,io_dir,'','')
-                let line = substitute(line,'\<reg\>\|\<wire\>\|\<real\>\|\<logic\>','','')
-                let line = substitute(line,'\[.\{-\}\]','','')
-
-                "ignore list like input [7:0] a[7:0];
-                if line =~ '\[.*\]'
-                    let width1 = 'c0'
-                    let width2 = 'c0'
-                    let line = substitute(line,'\[.*\]','','')
-                endif
+                let line = decl
+                let line = substitute(line,'^\(\[[^][]*\]\s*\)\+','','')
 
                 "get width string
                 if g:atv_autoinst_incl_width == 0       "if config,never output width
-                    let width = ''
-                elseif width2 == 'c0'
-                    if width1 == 'c0' 
-                        let width = ''
-                    else
-                        let width = '['.width1.']'
-                    endif
-                elseif width1 != 'c0'
-                    let width = '['.width1.':'.width2.']'
-                else
                     let width = ''
                 endif
 
                 "for types like input aa,bb,cc;
                 let names = split(line,',')
-                for name in names
-                    let name = substitute(name,'\s*','','g')          "delete redundant space
-                    let name = matchstr(name,'\w\+')
+                for name_decl in names
+                    let name_decl = substitute(name_decl,'\/\/.*$','','')
+                    let name_decl = substitute(name_decl,'[;)]\s*$','','')
+                    let name_decl = substitute(name_decl,'^\s*','','')
+                    let name = matchstr(name_decl,'^\w\+')
+                    let unpacked = matchstr(name_decl,'^\w\+\zs\(\s*\[[^][]*\]\s*\)\+')
+                    let unpacked = substitute(unpacked,'\s*','','g')
                     if name != ''
-                        "dict       [type,sequence,io_dir, width1, width2, signal_name, last_port, line, width, first_port ]
-                        let value = [type,seq,     io_dir, width1, width2, name,        0,         '',   width, '']
+                        "dict       [type,sequence,io_dir, width1, width2, signal_name, last_port, line, width, first_port, decl_width, unpacked ]
+                        let value = [type,seq,     io_dir, width1, width2, name,        0,         '',   width, '',         decl_width, unpacked]
                         call extend(io_seqs, {seq : value})
                         let seq = seq + 1
                     endif
@@ -794,6 +790,18 @@ function s:GetInstIO(lines)
 endfunction
 "}}}2
 
+function s:GetInstDefaultConn(io_value)
+    let value = copy(a:io_value)
+    if value[0] == 'keep'
+        return ''
+    endif
+    if len(value) > 11 && value[11] != ''
+        return value[5]
+    endif
+    return value[5].value[8]
+endfunction
+"}}}2
+
 "GetChangedInstIO 获取修改过的例化端口{{{2
 "--------------------------------------------------
 " Function: GetChangedInstIO
@@ -851,22 +859,17 @@ function s:GetChangedInstIO(lines,io_names)
             let conn = substitute(conn,'^\s*','','')                                "delete space from the start for alignment
             let conn = substitute(conn,'\s*$','','')                                "delete space in the end for alignment
             let conn_name = matchstr(conn,'\w\+')                                   "connection name
-            if inst_name != conn_name
+            if has_key(io_names,inst_name)
+                let conn_inst = s:GetInstDefaultConn(io_names[inst_name])
+            else
+                let conn_inst = inst_name
+            endif
+            if conn != conn_inst
+                if inst_name != conn_name || g:atv_autoinst_keep_name == 0 || conn != conn_name
+                    call extend(cinst_names,{inst_name : conn})
+                endif
+            elseif inst_name != conn_name
                 call extend(cinst_names,{inst_name : conn})
-            elseif has_key(io_names,inst_name)
-                let value = io_names[inst_name]
-                let type = value[0]
-                if type != 'keep' 
-                    let name = value[5]
-                    let width = value[8]
-                    let conn_inst = name.width
-                endif
-                "keep inst by signal name or by signal change
-                if g:atv_autoinst_keep_name == 0
-                    if conn_inst != conn
-                        call extend(cinst_names,{inst_name : conn})
-                    endif
-                endif
             endif
         endif
     endwhile
@@ -1222,8 +1225,7 @@ function s:DrawIO(io_seqs,io_list,chg_io_names,tcmt_names)
         "calculate maximum len of position to Draw
         if type != 'keep' 
             let name = value[5]
-            let width = value[8]
-            let connect = name.width
+            let connect = s:GetInstDefaultConn(value)
             "io that's changed will be keeped if config 
             if g:atv_autoinst_keep_chg == 1
                 if(has_key(chg_io_names,name))
@@ -1291,10 +1293,8 @@ function s:DrawIO(io_seqs,io_list,chg_io_names,tcmt_names)
             "lspace
 
             "width
-            let width = value[8]
-
             "io that's changed will be keeped if config 
-            let connect = name.width
+            let connect = s:GetInstDefaultConn(value)
             if g:atv_autoinst_keep_chg == 1
                 if(has_key(chg_io_names,name))
                     let connect = chg_io_names[name]
@@ -1446,4 +1446,3 @@ endfunction
 "}}}2
 
 "}}}1
-
