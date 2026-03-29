@@ -31,6 +31,7 @@ let g:_ATV_SNIPPET_DEFAULTS = {
             \'device':      'Xilinx',
             \'email':       'contact@honk.wang',
             \'website':     'honk.wang',
+            \'last_modified': 1,
             \'albpp_file':  expand("<sfile>:p:h").'/template/albpp.v',
             \'albpp_pos':   '4,13',
             \'albpn_file':  expand("<sfile>:p:h").'/template/albpn.v',
@@ -128,11 +129,15 @@ function s:AddHeader() "{{{1
         let lnum = lnum + 1
     endif
     call append(lnum,    "// Created On    : ".strftime("%Y/%m/%d %H:%M"))
-    call append(lnum+1,  "// Last Modified : ".strftime("%Y/%m/%d %H:%M"))
-    call append(lnum+2,  "// File Name     : ".filename)
-    call append(lnum+3,  "// Description   :")
-    call append(lnum+4,  "//         ")
-    let lnum = lnum + 5
+    let lnum = lnum + 1
+    if g:atv_snippet_last_modified == 1
+        call append(lnum, "// Last Modified : ".strftime("%Y/%m/%d %H:%M"))
+        let lnum = lnum + 1
+    endif
+    call append(lnum,    "// File Name     : ".filename)
+    call append(lnum+1,  "// Description   :")
+    call append(lnum+2,  "//         ")
+    let lnum = lnum + 3
     let cursor_lnum = lnum
     if g:atv_snippet_company != ''
         call append(lnum,   "// Copyright (c) ".strftime("%Y ") . g:atv_snippet_company . ".")
@@ -158,6 +163,9 @@ augroup filetype_verilog
     autocmd BufWrite *.sv call s:UpdateLastModifyTime()
 augroup END
 function s:UpdateLastModifyTime() "{{{2
+    if g:atv_snippet_last_modified == 0
+        return
+    endif
     let idx = 0
     for line in getline(1,10)
         let idx = idx + 1
